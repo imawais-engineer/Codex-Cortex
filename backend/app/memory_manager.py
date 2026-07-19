@@ -15,7 +15,7 @@ def process_conversation(text: str) -> int:
         memory["content"] = content
         memory["type"] = memory.get("type") or "general"
         memory["importance"] = float(memory.get("importance", 0.5))
-        memory["embedding"] = embedding.embed_memory(memory)
+        memory["embedding"] = embedding.embed_memory(memory["content"])
         storage.insert_memory(memory)
         stored += 1
     return stored
