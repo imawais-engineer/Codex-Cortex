@@ -6,6 +6,7 @@ on:
       - opened
       - reopened
       - labeled
+      - synchronize
 
 permissions:
   contents: write
@@ -18,12 +19,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
 
-      - name: Merge Codex PR
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch branches
+        run: |
+          git fetch origin main
+          git fetch origin "${{ github.event.pull_request.head.ref }}"
+
+      - name: Merge PR into main (prefer incoming PR changes)
+        run: |
+          git checkout main
+          git reset --hard origin/main
+
+          git merge \
+            --no-edit \
+            -X theirs \
+            "origin/${{ github.event.pull_request.head.ref }}"
+
+      - name: Push merged main
+        run: |
+          git push origin main
+
+      - name: Close PR and delete branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr merge "${{ github.event.pull_request.number }}" \
-            --merge \
+          gh pr close "${{ github.event.pull_request.number }}" \
+            --comment "Automatically merged into main (incoming Codex changes preferred)." \
             --delete-branch
