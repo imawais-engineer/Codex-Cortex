@@ -64,17 +64,17 @@ if HAS_FASTAPI:
             raise HTTPException(status_code=500, detail="Failed to capture memories") from exc
 
     @app.post("/recall")
-    def recall(payload: RecallRequest) -> list[dict]:
+    def recall(payload: RecallRequest) -> dict:
         try:
-            return memory_manager.recall(payload.query)
+            return {"memories": memory_manager.recall(payload.query)}
         except Exception as exc:
             logger.exception("Recall failed")
             raise HTTPException(status_code=500, detail="Failed to recall memories") from exc
 
     @app.get("/memories")
-    def memories() -> list[dict]:
+    def memories() -> dict:
         try:
-            return storage.get_all_memories()
+            return {"memories": storage.get_all_memories(), "analytics": analytics.usage_stats()}
         except Exception as exc:
             logger.exception("Memory listing failed")
             raise HTTPException(status_code=500, detail="Failed to list memories") from exc
@@ -96,7 +96,7 @@ else:
 
 
 class FallbackHandler(BaseHTTPRequestHandler):
-    def _send_json(self, payload: dict | list, status: int = 200) -> None:
+    def _send_json(self, payload: dict, status: int = 200) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -121,7 +121,7 @@ class FallbackHandler(BaseHTTPRequestHandler):
             if path == "/health":
                 self._send_json({"status": "ok"})
             elif path == "/memories":
-                self._send_json(storage.get_all_memories())
+                self._send_json({"memories": storage.get_all_memories(), "analytics": analytics.usage_stats()})
             else:
                 self._send_json({"detail": "Not found"}, 404)
         except Exception:
@@ -143,7 +143,7 @@ class FallbackHandler(BaseHTTPRequestHandler):
                 if not query:
                     self._send_json({"detail": "query is required"}, 422)
                     return
-                self._send_json(memory_manager.recall(query))
+                self._send_json({"memories": memory_manager.recall(query)})
             else:
                 self._send_json({"detail": "Not found"}, 404)
         except json.JSONDecodeError:
