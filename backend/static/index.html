@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codex Cortex</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">Codex Cortex</p>
+        <h1>Your coding agent that never forgets.</h1>
+        <p>Capture durable session context, recall it later, and browse your local memory store.</p>
+      </header>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Capture</h2>
+          <button id="captureButton">Capture sample memory</button>
+        </div>
+        <p id="captureStatus" class="status">Ready to capture a Codex conversation.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Recall</h2>
+        <form id="recallForm" class="search-row">
+          <input id="recallQuery" type="search" placeholder="What database are we using?" required />
+          <button type="submit">Recall</button>
+        </form>
+        <div id="recallResults" class="memory-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Memory Browser</h2>
+          <button id="refreshButton" class="secondary">Refresh</button>
+        </div>
+        <div id="memoryList" class="memory-list"></div>
+      </section>
+    </main>
+    <script src="script.js"></script>
+  </body>
+</html>
