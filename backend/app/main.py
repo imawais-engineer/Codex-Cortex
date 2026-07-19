@@ -1,7 +1,7 @@
 """FastAPI entry point for the Codex Cortex memory backend.
 
 The preferred runtime is FastAPI + Uvicorn. For restricted demo environments where
-those packages cannot be installed, `python -m backend.app.main` falls back to a
+those packages cannot be installed, `python -m app.main` falls back to a
 small stdlib HTTP server that exposes the same MVP endpoints.
 """
 
@@ -10,22 +10,24 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 
-from . import analytics, memory_manager, storage
-from .config import get_settings
+from app import analytics, memory_manager, storage
+from app.config import Settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-settings = get_settings()
+settings = Settings()
 HAS_FASTAPI = importlib.util.find_spec("fastapi") is not None and importlib.util.find_spec("uvicorn") is not None
 
 if HAS_FASTAPI:
     import uvicorn
     from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel, Field
 
     class CaptureRequest(BaseModel):
@@ -64,17 +66,17 @@ if HAS_FASTAPI:
             raise HTTPException(status_code=500, detail="Failed to capture memories") from exc
 
     @app.post("/recall")
-    def recall(payload: RecallRequest) -> dict:
+    def recall(payload: RecallRequest) -> list[dict]:
         try:
-            return {"memories": memory_manager.recall(payload.query)}
+            return memory_manager.recall(payload.query)
         except Exception as exc:
             logger.exception("Recall failed")
             raise HTTPException(status_code=500, detail="Failed to recall memories") from exc
 
     @app.get("/memories")
-    def memories() -> dict:
+    def memories() -> list[dict]:
         try:
-            return {"memories": storage.get_all_memories(), "analytics": analytics.usage_stats()}
+            return storage.get_all_memories()
         except Exception as exc:
             logger.exception("Memory listing failed")
             raise HTTPException(status_code=500, detail="Failed to list memories") from exc
@@ -91,12 +93,15 @@ if HAS_FASTAPI:
         except Exception as exc:
             logger.exception("Delete failed")
             raise HTTPException(status_code=500, detail="Failed to delete memory") from exc
+
+    static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="plugin_ui")
 else:
     app = None
 
 
 class FallbackHandler(BaseHTTPRequestHandler):
-    def _send_json(self, payload: dict, status: int = 200) -> None:
+    def _send_json(self, payload: dict | list, status: int = 200) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -112,6 +117,16 @@ class FallbackHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8") if length else "{}"
         return json.loads(raw or "{}")
 
+    def _send_static_file(self, filename: str, content_type: str) -> None:
+        static_path = os.path.join(os.path.dirname(__file__), "..", "static", filename)
+        with open(static_path, "rb") as file_handle:
+            body = file_handle.read()
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_OPTIONS(self) -> None:
         self._send_json({})
 
@@ -121,7 +136,12 @@ class FallbackHandler(BaseHTTPRequestHandler):
             if path == "/health":
                 self._send_json({"status": "ok"})
             elif path == "/memories":
-                self._send_json({"memories": storage.get_all_memories(), "analytics": analytics.usage_stats()})
+                self._send_json(storage.get_all_memories())
+            elif path in ("/", "/index.html"):
+                self._send_static_file("index.html", "text/html")
+            elif path in ("/style.css", "/script.js"):
+                content_type = "text/css" if path.endswith(".css") else "application/javascript"
+                self._send_static_file(path.lstrip("/"), content_type)
             else:
                 self._send_json({"detail": "Not found"}, 404)
         except Exception:
@@ -143,7 +163,7 @@ class FallbackHandler(BaseHTTPRequestHandler):
                 if not query:
                     self._send_json({"detail": "query is required"}, 422)
                     return
-                self._send_json({"memories": memory_manager.recall(query)})
+                self._send_json(memory_manager.recall(query))
             else:
                 self._send_json({"detail": "Not found"}, 404)
         except json.JSONDecodeError:
@@ -165,7 +185,7 @@ class FallbackHandler(BaseHTTPRequestHandler):
 def run() -> None:
     storage.init_db()
     if HAS_FASTAPI:
-        uvicorn.run("backend.app.main:app", host="127.0.0.1", port=8000, reload=False)
+        uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=False)
     else:
         logger.warning("FastAPI/Uvicorn unavailable; starting stdlib fallback server")
         HTTPServer(("127.0.0.1", 8000), FallbackHandler).serve_forever()
