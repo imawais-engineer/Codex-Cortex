@@ -1,0 +1,6 @@
+{
+  "name": "Codex Cortex",
+  "description": "Persistent memory for Codex",
+  "version": "1.0.0",
+  "entrypoint": "index.html"
+}
