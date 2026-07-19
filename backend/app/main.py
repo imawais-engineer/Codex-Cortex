@@ -10,24 +10,22 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
-import os
 from contextlib import asynccontextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 
-from app import analytics, memory_manager, storage
-from app.config import Settings
+from . import analytics, memory_manager, storage
+from .config import get_settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-settings = Settings()
+settings = get_settings()
 HAS_FASTAPI = importlib.util.find_spec("fastapi") is not None and importlib.util.find_spec("uvicorn") is not None
 
 if HAS_FASTAPI:
     import uvicorn
     from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel, Field
 
     class CaptureRequest(BaseModel):
@@ -66,17 +64,17 @@ if HAS_FASTAPI:
             raise HTTPException(status_code=500, detail="Failed to capture memories") from exc
 
     @app.post("/recall")
-    def recall(payload: RecallRequest) -> list[dict]:
+    def recall(payload: RecallRequest) -> dict:
         try:
-            return memory_manager.recall(payload.query)
+            return {"memories": memory_manager.recall(payload.query)}
         except Exception as exc:
             logger.exception("Recall failed")
             raise HTTPException(status_code=500, detail="Failed to recall memories") from exc
 
     @app.get("/memories")
-    def memories() -> list[dict]:
+    def memories() -> dict:
         try:
-            return storage.get_all_memories()
+            return {"memories": storage.get_all_memories(), "analytics": analytics.usage_stats()}
         except Exception as exc:
             logger.exception("Memory listing failed")
             raise HTTPException(status_code=500, detail="Failed to list memories") from exc
@@ -93,15 +91,12 @@ if HAS_FASTAPI:
         except Exception as exc:
             logger.exception("Delete failed")
             raise HTTPException(status_code=500, detail="Failed to delete memory") from exc
-
-    static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
-    app.mount("/", StaticFiles(directory=static_dir, html=True), name="plugin_ui")
 else:
     app = None
 
 
 class FallbackHandler(BaseHTTPRequestHandler):
-    def _send_json(self, payload: dict | list, status: int = 200) -> None:
+    def _send_json(self, payload: dict, status: int = 200) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -117,16 +112,6 @@ class FallbackHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8") if length else "{}"
         return json.loads(raw or "{}")
 
-    def _send_static_file(self, filename: str, content_type: str) -> None:
-        static_path = os.path.join(os.path.dirname(__file__), "..", "static", filename)
-        with open(static_path, "rb") as file_handle:
-            body = file_handle.read()
-        self.send_response(200)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
     def do_OPTIONS(self) -> None:
         self._send_json({})
 
@@ -136,12 +121,7 @@ class FallbackHandler(BaseHTTPRequestHandler):
             if path == "/health":
                 self._send_json({"status": "ok"})
             elif path == "/memories":
-                self._send_json(storage.get_all_memories())
-            elif path in ("/", "/index.html"):
-                self._send_static_file("index.html", "text/html")
-            elif path in ("/style.css", "/script.js"):
-                content_type = "text/css" if path.endswith(".css") else "application/javascript"
-                self._send_static_file(path.lstrip("/"), content_type)
+                self._send_json({"memories": storage.get_all_memories(), "analytics": analytics.usage_stats()})
             else:
                 self._send_json({"detail": "Not found"}, 404)
         except Exception:
@@ -163,7 +143,7 @@ class FallbackHandler(BaseHTTPRequestHandler):
                 if not query:
                     self._send_json({"detail": "query is required"}, 422)
                     return
-                self._send_json(memory_manager.recall(query))
+                self._send_json({"memories": memory_manager.recall(query)})
             else:
                 self._send_json({"detail": "Not found"}, 404)
         except json.JSONDecodeError:

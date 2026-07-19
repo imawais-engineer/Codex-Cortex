@@ -56,7 +56,7 @@ async function recallMemory(event) {
     });
     if (!response.ok) throw new Error(`Recall failed: ${response.status}`);
     const data = await response.json();
-    renderMemories(recallResults, Array.isArray(data) ? data : data.memories || []);
+    renderMemories(recallResults, data.memories || []);
   } catch (error) {
     recallResults.innerHTML = `<p class="status error">${error.message}</p>`;
   }
@@ -68,7 +68,7 @@ async function loadMemories() {
     const response = await fetch(`${API_BASE}/memories`);
     if (!response.ok) throw new Error(`Load failed: ${response.status}`);
     const data = await response.json();
-    renderMemories(memoryList, Array.isArray(data) ? data : data.memories || []);
+    renderMemories(memoryList, data.memories || []);
   } catch (error) {
     memoryList.innerHTML = `<p class="status error">${error.message}</p>`;
   }
